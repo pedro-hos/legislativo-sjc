@@ -17,9 +17,8 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -107,12 +106,12 @@ public class ScrapperUtils {
 		HttpRequest request = HttpRequest.newBuilder(new URI(url))
 										 .timeout(Duration.ofSeconds(100))
 	            						 .version(HttpClient.Version.HTTP_2)
-	            						 .header("Content-Type", "application/x-www-form-urlencoded")
+	            						 .header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	            						 .header("Accept", "application/CSV")
 	            						 .POST(BodyPublishers.ofString(getDataString(parameters)))
 	            						 .build();
 		
-		HttpResponse<Path> response = client.send(request, BodyHandlers.ofFile(Paths.get(path + LocalDate.now().minusMonths(1).format(DateTimeFormatter.ofPattern("MMyyyy")) + ".csv")));
+		HttpResponse<Path> response = client.send(request, BodyHandlers.ofFileDownload(Paths.get(path), StandardOpenOption.CREATE, StandardOpenOption.WRITE));
 	        
 		return response.body();
 		
