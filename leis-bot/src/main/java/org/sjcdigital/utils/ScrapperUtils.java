@@ -4,7 +4,27 @@
 package org.sjcdigital.utils;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.CookieHandler;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpRequest.BodyPublishers;
+import java.net.http.HttpResponse;
+import java.net.http.HttpResponse.BodyHandlers;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import javax.enterprise.context.ApplicationScoped;
 
@@ -26,6 +46,9 @@ public class ScrapperUtils {
 	
 	@ConfigProperty(name = "scrapper.timeout")
 	int timeout;
+	
+	@ConfigProperty(name = "location.files")
+	String path;
 	
 	/**
 	 * 
@@ -59,39 +82,63 @@ public class ScrapperUtils {
 	 * @param url
 	 * @param parameters
 	 * @param cookies
+	 * @return 
 	 * @return
 	 * @throws IOException
+	 * @throws URISyntaxException 
+	 * @throws InterruptedException 
 	 */
-	public String getCSVResponse(final String url, Map<String, String> parameters, Map<String, String> cookies) throws IOException {
+	public Path downloadCSV(final String url, Map<String, String> parameters, Map<String, String> cookies) throws IOException, URISyntaxException, InterruptedException {
 		
+		List<String> cookiesList = new ArrayList<>();
+		cookies.forEach((k,v) -> cookiesList.add(k + "=" + v));
 		
-		/*
-		 * Client client = ClientBuilder.newClient();
-		 * 
-		 * Form form = new Form(); parameters.forEach((k,v) -> form.param(k, v));
-		 * 
-		 * Entity<Form> entity = Entity.form(form);
-		 * 
-		 * return client.target(url) .request("application/CSV") .header("content-type",
-		 * "application/x-www-form-urlencoded") .header("cache-control", "no-cache")
-		 * .cookie("ASP.NET_SessionId", cookies.get("ASP.NET_SessionId"))
-		 * .cookie("__AntiXsrfToken", cookies.get("__AntiXsrfToken"))
-		 * .post(Entity.entity(entity, MediaType.APPLICATION_FORM_URLENCODED))
-		 * .readEntity(String.class);
-		 */
-			  
-	
+		ConcurrentHashMap<String, List<String>> cookieHeaders = new ConcurrentHashMap<>();
+		cookieHeaders.put("Cookie", cookiesList);
 		
-		Response response = Jsoup.connect(url)
-								.userAgent(agent)
-								.timeout(timeout)
-								.header("content-type", "application/x-www-form-urlencoded")
-								.header("cache-control", "no-cache")
-								.data(parameters)
-								.cookies(cookies)
-								.method(Method.POST)
-								.execute();
+		CookieHandler cookieManager = new MyCookieHandler(cookieHeaders);
+		
+		HttpClient client = HttpClient.newBuilder()
+	            					  .version(HttpClient.Version.HTTP_2)
+	            					  .cookieHandler(cookieManager)
+	            					  .followRedirects(HttpClient.Redirect.NEVER)
+	            					  .build();
+		
+		HttpRequest request = HttpRequest.newBuilder(new URI(url))
+										 .timeout(Duration.ofSeconds(100))
+	            						 .version(HttpClient.Version.HTTP_2)
+	            						 .header("Content-Type", "application/x-www-form-urlencoded")
+	            						 .header("Accept", "application/CSV")
+	            						 .POST(BodyPublishers.ofString(getDataString(parameters)))
+	            						 .build();
+		
+		HttpResponse<Path> response = client.send(request, BodyHandlers.ofFile(Paths.get(path + LocalDate.now().minusMonths(1).format(DateTimeFormatter.ofPattern("MMyyyy")) + ".csv")));
+	        
 		return response.body();
+		
+	}
+	
+	private String getDataString(Map<String, String> params) throws UnsupportedEncodingException{
+		return params.keySet().stream()
+							  .map(k -> k + "=" + URLEncoder.encode(params.get(k), StandardCharsets.UTF_8))
+							  .collect(Collectors.joining("&"));
+	}
+	
+	static class MyCookieHandler extends CookieHandler {
+
+		final ConcurrentHashMap<String, List<String>> cookies;
+
+		MyCookieHandler(ConcurrentHashMap<String, List<String>> map) {
+			this.cookies = map;
+		}
+
+		@Override
+		public Map<String, List<String>> get(URI uri, Map<String, List<String>> requestHeaders) throws IOException {
+			return cookies;
+		}
+
+		@Override
+		public void put(URI uri, Map<String, List<String>> responseHeaders) throws IOException { }
 	}
 
 }

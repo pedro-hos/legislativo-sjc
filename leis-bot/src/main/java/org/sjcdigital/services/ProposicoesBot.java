@@ -5,9 +5,9 @@ package org.sjcdigital.services;
 
 import java.io.FileReader;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -35,7 +35,6 @@ import org.slf4j.LoggerFactory;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 import com.opencsv.enums.CSVReaderNullFieldIndicator;
-import com.opencsv.exceptions.CsvValidationException;
 
 /**
  * @author pedro-hos@outlook.com
@@ -91,20 +90,15 @@ public class ProposicoesBot {
 	 */
 	public void buscaProposicoesCSV() {
 		
-		try {
-			
-			Map<String, Map<String, String>> parameters = montaParameters();
-			String body = scrapperUtils.getCSVResponse(montaURLMesAnterior(), 
-														  parameters.get("formParameters"), 
-														  parameters.get("cookies"));
-			
-			
-			
-			Files.write(Paths.get(path + LocalDate.now().minusMonths(1) + ".csv"), body.trim().getBytes());
-			
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+			try {
+				
+				Map<String, Map<String, String>> parameters = montaParameters();
+				Path path = scrapperUtils.downloadCSV(montaURLMesAnterior(), parameters.get("formParameters"), parameters.get("cookies"));
+				extractDataFromCSV(path.toString());
+				
+			} catch (IOException | URISyntaxException | InterruptedException e) {
+				e.printStackTrace();
+			}
 		
 	}
 	
@@ -140,6 +134,7 @@ public class ProposicoesBot {
 	public void extractDataFromCSV(final String file) {
 		
 		long currentLine = 0;
+		String[] lineInArray = null;
 		
 		try { 
 			
@@ -150,10 +145,8 @@ public class ProposicoesBot {
 															   .withSkipLines(1)
 															   .build();
 			
-			String[] lineInArray;
 			
 			while ((lineInArray = reader.readNext()) != null) {
-				
 				
 				currentLine = reader.getLinesRead();
 				
@@ -169,14 +162,16 @@ public class ProposicoesBot {
 				
 				prop.proponetes = saveOrGetProponent(proponenteService.buscaProponentesPagina(prop.processo, prop.ano, prop.tipo));
 				
+				LOGGER.info(prop.toString());
+				
 				proposicoesRepository.persist(prop);
 				
-				LOGGER.info(prop.toString());
 				
 			}
 			
-		} catch (IOException | CsvValidationException e) {
+		} catch (Exception e) {
 			LOGGER.error("Erro ao ler linha: " + currentLine + " do CSV " + file);
+			
 			e.printStackTrace();
 		}
 		
