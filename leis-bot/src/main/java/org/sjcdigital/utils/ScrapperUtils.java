@@ -87,7 +87,7 @@ public class ScrapperUtils {
 	 * @throws URISyntaxException 
 	 * @throws InterruptedException 
 	 */
-	public Path downloadCSV(final String url, Map<String, String> parameters, Map<String, String> cookies) throws IOException, URISyntaxException, InterruptedException {
+	public Path downloadXLS(final String url, Map<String, String> parameters, Map<String, String> cookies) throws IOException, URISyntaxException, InterruptedException {
 		
 		List<String> cookiesList = new ArrayList<>();
 		cookies.forEach((k,v) -> cookiesList.add(k + "=" + v));
@@ -107,12 +107,11 @@ public class ScrapperUtils {
 										 .timeout(Duration.ofSeconds(100))
 	            						 .version(HttpClient.Version.HTTP_2)
 	            						 .header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
-	            						 .header("Accept", "application/CSV")
 	            						 .POST(BodyPublishers.ofString(getDataString(parameters)))
 	            						 .build();
 		
 		HttpResponse<Path> response = client.send(request, BodyHandlers.ofFileDownload(Paths.get(path), StandardOpenOption.CREATE, StandardOpenOption.WRITE));
-	        
+	    
 		return response.body();
 		
 	}

@@ -32,7 +32,7 @@ public class PopulaDBService {
 	@ConfigProperty(name = "location.files")
 	String path;
 	
-	@ConfigProperty(name = "start.csv.data")
+	@ConfigProperty(name = "start.xls.data")
 	String filename;
 	
 	/**
@@ -45,8 +45,7 @@ public class PopulaDBService {
 		LOGGER.info("The application is starting...");
 		
 		if(proposicoesRepository.count() == 0) {
-			//bot.extractDataFromCSV(path + filename);
-			bot.buscaProposicoesCSV();
+			bot.extractDataFromXLSX(path + filename);
 			LOGGER.info(">>>> Total de proposições salvas: " + proposicoesRepository.count());
 		}
 		

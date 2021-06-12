@@ -3,10 +3,9 @@
  */
 package org.sjcdigital.services;
 
-import java.io.FileReader;
+import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -19,6 +18,10 @@ import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.transaction.Transactional;
 
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jsoup.Connection.Response;
 import org.jsoup.nodes.Document;
@@ -31,10 +34,6 @@ import org.sjcdigital.utils.ParserUtils;
 import org.sjcdigital.utils.ScrapperUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.opencsv.CSVReader;
-import com.opencsv.CSVReaderBuilder;
-import com.opencsv.enums.CSVReaderNullFieldIndicator;
 
 /**
  * @author pedro-hos@outlook.com
@@ -64,10 +63,10 @@ public class ProposicoesBot {
 	@ConfigProperty(name = "form.param.eventvalidation")
 	String eventValidationParam;
 	
-	@ConfigProperty(name = "form.param.csv")
+	@ConfigProperty(name = "form.param.xls")
 	String csvParam;
 	
-	@ConfigProperty(name = "form.param.csv.value")
+	@ConfigProperty(name = "form.param.xls.value")
 	String csvParamValue;
 	
 	@ConfigProperty(name = "location.files")
@@ -88,13 +87,13 @@ public class ProposicoesBot {
 	/**
 	 * Isso será um cron para pegar todo inicio de mes o do mes anterio.
 	 */
-	public void buscaProposicoesCSV() {
+	public void buscaProposicoesXLS() {
 		
 			try {
 				
 				Map<String, Map<String, String>> parameters = montaParameters();
-				Path path = scrapperUtils.downloadCSV(montaURLMesAnterior(), parameters.get("formParameters"), parameters.get("cookies"));
-				extractDataFromCSV(path.toString());
+				Path path = scrapperUtils.downloadXLS(montaURLMesAnterior(), parameters.get("formParameters"), parameters.get("cookies"));
+				extractDataFromXLSX(path.toString());
 				
 			} catch (IOException | URISyntaxException | InterruptedException e) {
 				e.printStackTrace();
@@ -119,59 +118,65 @@ public class ProposicoesBot {
 		return paramenters;
 	}
 	
+	private String montaURLPorData(final String startDate, final String endDate) {
+		LOGGER.info("Getting data from " + startDate + " to " + endDate);
+		return url + queryBuscaAvancada + queryInicio + startDate + queryFinal + endDate;
+	}
+	
 	private String montaURLMesAnterior() {
 		
 		DateTimeFormatter pattern = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 		LocalDate initial = LocalDate.now().minusMonths(1);
+		
 		String start = initial.withDayOfMonth(1).format(pattern);
 		String end = initial.withDayOfMonth(initial.lengthOfMonth()).format(pattern);
 		
-		return url + queryBuscaAvancada + queryInicio + start + queryFinal + end;
+		return montaURLPorData(start, end);
 		
 	}
 	
+	/**
+	 * 
+	 * @param filePath
+	 */
 	@Transactional
-	public void extractDataFromCSV(final String file) {
+	public void extractDataFromXLSX(final String filePath) {
 		
-		long currentLine = 0;
-		String[] lineInArray = null;
-		
-		try { 
+		try {
 			
-			LOGGER.info("Iniciando extração do CSV ...");
+			Workbook workbook = WorkbookFactory.create(new File(filePath));
 			
-			FileReader fileReader = new FileReader(file, StandardCharsets.ISO_8859_1);
-			CSVReader reader = new CSVReaderBuilder(fileReader).withFieldAsNull(CSVReaderNullFieldIndicator.EMPTY_SEPARATORS)
-															   .withSkipLines(1)
-															   .build();
+			// Getting the Sheet at index zero
+	        Sheet sheet = workbook.getSheetAt(0);
+	        
+	        // Create a DataFormatter to format and get each cell's value as String
+	        DataFormatter dataFormatter = new DataFormatter();
+	        
+	        sheet.forEach(row -> {
+
+	        	if (row.getRowNum() != 0) {
+		        	Proposicoes prop = new Proposicoes();
+		        	
+		        	prop.processo = ParserUtils.convertToInteger(dataFormatter.formatCellValue(row.getCell(0)));
+					prop.ano = Integer.valueOf(dataFormatter.formatCellValue(row.getCell(1)));
+					prop.tipo = Tipos.findByText(dataFormatter.formatCellValue(row.getCell(2))).orElseThrow();
+					prop.situacao = dataFormatter.formatCellValue(row.getCell(3));
+					prop.ementa = dataFormatter.formatCellValue(row.getCell(4));
+					prop.protocolo = ParserUtils.convertToInteger(dataFormatter.formatCellValue(row.getCell(5)));
+					prop.data = ParserUtils.convertToLocalDate(dataFormatter.formatCellValue(row.getCell(6)));
+					
+					prop.proponetes = saveOrGetProponent(proponenteService.buscaProponentesPagina(prop.processo, prop.ano, prop.tipo));
+					
+					LOGGER.info(prop.toString());
+					
+					proposicoesRepository.persist(prop);
+	        	}
+	        	
+	        });
+	        
+	        workbook.close();
 			
-			
-			while ((lineInArray = reader.readNext()) != null) {
-				
-				currentLine = reader.getLinesRead();
-				
-				Proposicoes prop = new Proposicoes();
-				
-				prop.processo = ParserUtils.convertToInteger(lineInArray[0]);
-				prop.ano = Integer.valueOf(lineInArray[1]);
-				prop.tipo = Tipos.findByText(lineInArray[2]).orElseThrow();
-				prop.situacao = lineInArray[3];
-				prop.ementa = lineInArray[4];
-				prop.protocolo = ParserUtils.convertToInteger(lineInArray[5]);
-				prop.data = ParserUtils.convertToLocalDate(lineInArray[6]);
-				
-				prop.proponetes = saveOrGetProponent(proponenteService.buscaProponentesPagina(prop.processo, prop.ano, prop.tipo));
-				
-				LOGGER.info(prop.toString());
-				
-				proposicoesRepository.persist(prop);
-				
-				
-			}
-			
-		} catch (Exception e) {
-			LOGGER.error("Erro ao ler linha: " + currentLine + " do CSV " + file);
-			
+		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		
@@ -197,7 +202,6 @@ public class ProposicoesBot {
 				proponenteRepository.persist(proponentes);
 				nova.add(proponentes);
 			}
-			
 		}
 		
 		return nova;
